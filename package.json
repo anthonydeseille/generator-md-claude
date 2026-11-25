@@ -1,0 +1,20 @@
+{
+  "name": "generator-md-claude",
+  "version": "0.1.0",
+  "description": "Génère un CLAUDE.md (et .claude/settings.json) pour un projet Spring Boot / Angular via un questionnaire interactif",
+  "type": "module",
+  "bin": {
+    "generator-md-claude": "./bin/index.js",
+    "md-claude": "./bin/index.js"
+  },
+  "scripts": {
+    "start": "node ./bin/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^1.9.0"
+  }
+}
