@@ -1,7 +1,7 @@
 {
   "name": "generator-md-claude",
   "version": "0.1.0",
-  "description": "Génère un CLAUDE.md (et .claude/settings.json) pour un projet Spring Boot / Angular via un questionnaire interactif",
+  "description": "Interactive questionnaire that generates CLAUDE.md (and .claude/settings.json) for Spring Boot / Angular projects",
   "type": "module",
   "bin": {
     "generator-md-claude": "./bin/index.js",

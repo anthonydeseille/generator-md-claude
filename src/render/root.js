@@ -2,33 +2,33 @@ import { backendCommands, frontendCommands } from './commands.js';
 import { CI, clusterSafetyRules } from './deploy.js';
 import { splitList, where } from './util.js';
 
-const LANG = { fr: 'français', en: 'anglais' };
+const LANG = { fr: 'French', en: 'English' };
 
 function organisation(a) {
   const { parts, dirs, layout, deployWhere, related } = a.project;
   const repo = (name) => (name ? ` \`${name}\`` : '');
   const desc = {
-    backend: 'API Spring Boot',
-    frontend: 'application Angular',
-    deploy: 'déploiement (images, manifests Kubernetes)',
+    backend: 'Spring Boot API',
+    frontend: 'Angular application',
+    deploy: 'deployment (images, Kubernetes manifests)',
   };
   return [
     {
-      monorepo: '- **Monorepo** : backend Spring Boot et frontend Angular dans ce dépôt.',
-      backend: '- Ce dépôt contient **uniquement le backend** Spring Boot.',
-      frontend: '- Ce dépôt contient **uniquement le frontend** Angular.',
-      infra: '- Dépôt **d’infra** : déploiement des applications, aucun code applicatif.',
+      monorepo: '- **Monorepo**: Spring Boot backend and Angular frontend in this repository.',
+      backend: '- This repository holds **only the Spring Boot backend**.',
+      frontend: '- This repository holds **only the Angular frontend**.',
+      infra: '- **Infrastructure** repository: application deployment, no application code.',
     }[layout],
     ...parts
       .filter((p) => dirs[p] !== '.')
-      .map((p) => `- \`${dirs[p]}/\` : ${desc[p]} (règles détaillées dans \`${dirs[p]}/CLAUDE.md\`).`),
-    layout === 'backend' && `- Frontend : dépôt séparé${repo(related.frontend)}.`,
-    layout === 'frontend' && `- Backend : dépôt séparé${repo(related.backend)}.`,
-    layout === 'infra' && related.backend && `- Backend déployé : dépôt${repo(related.backend)}.`,
-    layout === 'infra' && related.frontend && `- Frontend déployé : dépôt${repo(related.frontend)}.`,
+      .map((p) => `- \`${dirs[p]}/\`: ${desc[p]} (detailed rules in \`${dirs[p]}/CLAUDE.md\`).`),
+    layout === 'backend' && `- Frontend: separate repository${repo(related.frontend)}.`,
+    layout === 'frontend' && `- Backend: separate repository${repo(related.backend)}.`,
+    layout === 'infra' && related.backend && `- Deployed backend: repository${repo(related.backend)}.`,
+    layout === 'infra' && related.frontend && `- Deployed frontend: repository${repo(related.frontend)}.`,
     deployWhere === 'separate' &&
-      `- Déploiement (manifests, charts, config d’environnement) : dépôt d’infra séparé${repo(related.infra)}. Ne pas créer de manifests Kubernetes ici ; signaler ce qui doit y être modifié.`,
-    a.ops.ci !== 'none' && `- CI/CD : ${CI[a.ops.ci]}.`,
+      `- Deployment (manifests, charts, environment config): separate infrastructure repository${repo(related.infra)}. Do not create Kubernetes manifests here; point out what needs to change there.`,
+    a.ops.ci !== 'none' && `- CI/CD: ${CI[a.ops.ci]}.`,
   ];
 }
 
@@ -39,10 +39,10 @@ function commands(a) {
     subs.push({
       title: `Backend${where(a.project.dirs.backend)}`,
       lines: [
-        `- Lancer : \`${c.run}\``,
-        `- Tests : \`${c.test}\` (un seul test : \`${c.testOne}\`)`,
-        `- Build complet + tests d’intégration : \`${c.verify}\``,
-        c.format && `- Formatage / qualité : \`${c.format}\``,
+        `- Run: \`${c.run}\``,
+        `- Tests: \`${c.test}\` (single test: \`${c.testOne}\`)`,
+        `- Full build + integration tests: \`${c.verify}\``,
+        c.format && `- Formatting / quality: \`${c.format}\``,
       ],
     });
   }
@@ -51,18 +51,18 @@ function commands(a) {
     subs.push({
       title: `Frontend${where(a.project.dirs.frontend)}`,
       lines: [
-        `- Installer : \`${c.pm} install\``,
-        `- Lancer : \`${c.start}\``,
-        `- Tests : \`${c.test}\``,
-        `- Build : \`${c.build}\``,
-        c.lint && `- Lint : \`${c.lint}\``,
-        c.e2e && `- E2E : \`${c.e2e}\``,
-        c.api && `- Régénérer le client API : \`${c.api}\``,
+        `- Install: \`${c.pm} install\``,
+        `- Run: \`${c.start}\``,
+        `- Tests: \`${c.test}\``,
+        `- Build: \`${c.build}\``,
+        c.lint && `- Lint: \`${c.lint}\``,
+        c.e2e && `- E2E: \`${c.e2e}\``,
+        c.api && `- Regenerate the API client: \`${c.api}\``,
       ],
     });
   }
   if (a.ops.compose) {
-    subs.push({ title: 'Environnement local', lines: ['- Dépendances : `docker compose up -d` / `docker compose down`'] });
+    subs.push({ title: 'Local environment', lines: ['- Dependencies: `docker compose up -d` / `docker compose down`'] });
   }
   return subs;
 }
@@ -70,28 +70,28 @@ function commands(a) {
 function conventions(a) {
   const c = a.conventions;
   const ticket = c.ticketPrefix ? `${c.ticketPrefix}-123` : null;
-  const branch = ticket ? `${ticket}-description-courte` : 'description-courte';
+  const branch = ticket ? `${ticket}-short-description` : 'short-description';
   const branching = {
-    feature: `- Branches courtes depuis \`main\` : \`feature/${branch}\`, \`fix/${branch}\`. Merge via pull request.`,
-    gitflow: `- Git Flow : \`develop\` comme branche d’intégration, \`feature/${branch}\`, \`release/x.y.z\`, \`hotfix/${branch}\`.`,
-    trunk: '- Trunk-based : petits commits fréquents sur `main`, fonctionnalités incomplètes derrière un feature flag.',
+    feature: `- Short-lived branches from \`main\`: \`feature/${branch}\`, \`fix/${branch}\`. Merge through pull requests.`,
+    gitflow: `- Git Flow: \`develop\` as the integration branch, \`feature/${branch}\`, \`release/x.y.z\`, \`hotfix/${branch}\`.`,
+    trunk: '- Trunk-based: small, frequent commits on `main`; unfinished features behind a feature flag.',
   }[c.branching];
   return [
-    `- Identifiants (classes, méthodes, variables) en ${LANG[c.codeLang]} ; commentaires et documentation en ${LANG[c.docLang]}.`,
+    `- Identifiers (classes, methods, variables) in ${LANG[c.codeLang]}; comments and documentation in ${LANG[c.docLang]}.`,
     c.commitStyle === 'conventional'
-      ? `- Commits au format Conventional Commits (\`feat:\`, \`fix:\`, \`refactor:\`, \`test:\`, \`chore:\`, \`docs:\`), message en ${LANG[c.commitLang]}${ticket ? `, référence du ticket en pied (\`Refs: ${ticket}\`)` : ''}.`
-      : `- Messages de commit en ${LANG[c.commitLang]}, à l’impératif, une ligne de résumé de moins de 72 caractères${ticket ? `, avec la référence du ticket (\`${ticket}\`)` : ''}.`,
+      ? `- Commits follow Conventional Commits (\`feat:\`, \`fix:\`, \`refactor:\`, \`test:\`, \`chore:\`, \`docs:\`), messages in ${LANG[c.commitLang]}${ticket ? `, ticket reference in the footer (\`Refs: ${ticket}\`)` : ''}.`
+      : `- Commit messages in ${LANG[c.commitLang]}, imperative mood, summary line under 72 characters${ticket ? `, with the ticket reference (\`${ticket}\`)` : ''}.`,
     branching,
-    '- Commentaires : expliquer le *pourquoi*, pas le *quoi*. Pas de code commenté laissé en place.',
+    '- Comments explain the *why*, not the *what*. No commented-out code left behind.',
   ];
 }
 
 function workflow(a) {
-  const checks = [a.backend && 'build et tests backend', a.frontend && 'tests et lint frontend'].filter(Boolean);
+  const checks = [a.backend && 'backend build and tests', a.frontend && 'frontend tests and lint'].filter(Boolean);
   return [
-    checks.length && `- Une tâche n’est terminée que si ${checks.join(', ')} passent.`,
-    '- Ne pas ajouter de dépendance (Maven/Gradle/npm) sans le signaler explicitement et justifier le choix.',
-    '- Changements minimaux et ciblés : pas de refactoring opportuniste hors du périmètre demandé.',
+    checks.length && `- A task is only done when ${checks.join(' and ')} pass.`,
+    '- Do not add a dependency (Maven/Gradle/npm) without saying so explicitly and justifying it.',
+    '- Minimal, focused changes: no opportunistic refactoring outside the requested scope.',
   ];
 }
 
@@ -102,11 +102,11 @@ export function rootDoc(a) {
     intro: a.project.description || undefined,
     sections: [
       { title: 'Organisation', lines: organisation(a) },
-      { title: 'Commandes', lines: [], subsections: commands(a) },
+      { title: 'Commands', lines: [], subsections: commands(a) },
       { title: 'Conventions', lines: conventions(a) },
-      { title: 'Façon de travailler', lines: workflow(a) },
-      { title: 'Kubernetes : règles de sécurité', lines: clusterSafetyRules(a.ops) },
-      { title: 'Interdits', lines: forbidden },
+      { title: 'Way of working', lines: workflow(a) },
+      { title: 'Kubernetes safety rules', lines: clusterSafetyRules(a.ops) },
+      { title: 'Forbidden', lines: forbidden },
     ],
   };
 }

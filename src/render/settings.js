@@ -32,8 +32,8 @@ export function buildPermissions(a) {
   if (d.orchestrator !== 'none') {
     const kc = kubectlBin(d);
     const ns = d.namespace;
-    // Les règles Claude Code sont des préfixes : le CLAUDE.md impose l'ordre
-    // `<kc> --context <ctx> -n <ns> <verbe>` pour qu'elles s'appliquent.
+    // Claude Code rules are prefix matches: CLAUDE.md enforces the order
+    // `<kc> --context <ctx> -n <ns> <verb>` so that they apply.
     const kReads = ['get', 'describe', 'logs', 'diff', 'top', 'events', 'rollout status'];
     const kWrites = ['apply', 'patch', 'scale', 'rollout restart', 'rollout undo', 'exec'];
     const hReads = ['list', 'status', 'get values', 'diff'];
@@ -57,7 +57,7 @@ export function buildPermissions(a) {
     ask.push(bash(`${kc} config use-context`));
     deny.push(bash(`${kc} delete`), bash('helm uninstall'));
 
-    // La vraie protection de la prod reste un kubeconfig / RBAC sans accès pour Claude.
+    // The real production safeguard is a kubeconfig / RBAC with no prod access for Claude.
     for (const ctx of splitList(d.prodContexts)) {
       deny.push(
         bash(`${kc} --context ${ctx}`),
@@ -83,7 +83,7 @@ export function buildPermissions(a) {
 
 const uniq = (arr) => [...new Set(arr)];
 
-/** Fusionne avec un settings.json existant : on ajoute, on ne retire jamais rien. */
+/** Merges into an existing settings.json: only adds rules, never removes any. */
 export function mergeSettings(existing, generated) {
   const result = { ...existing };
   const perms = { ...(existing.permissions ?? {}) };

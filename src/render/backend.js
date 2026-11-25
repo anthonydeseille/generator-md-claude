@@ -18,32 +18,32 @@ const LIBS = {
 function architecture(b) {
   const pkg = b.basePackage;
   const common = [
-    `- Package racine : \`${pkg}\`.`,
-    b.libs.includes('archunit') && '- Ces règles sont vérifiées par des tests ArchUnit : ne jamais les contourner ni les désactiver.',
+    `- Base package: \`${pkg}\`.`,
+    b.libs.includes('archunit') && '- These rules are enforced by ArchUnit tests: never bypass or disable them.',
   ];
   switch (b.architecture) {
     case 'hexagonal':
       return [
         common[0],
-        `- \`${pkg}.domain\` : modèle métier pur, **aucune dépendance Spring ni ${b.persistence === 'jpa' ? 'JPA' : 'persistance'}**.`,
-        `- \`${pkg}.application\` : cas d'usage et ports (interfaces) entrants et sortants.`,
-        `- \`${pkg}.infrastructure\` : adaptateurs (REST, persistance, messaging) qui implémentent les ports.`,
-        '- Les dépendances pointent toujours vers `domain`, jamais l’inverse.',
+        `- \`${pkg}.domain\`: pure business model, **no Spring or ${b.persistence === 'jpa' ? 'JPA' : 'persistence'} dependency**.`,
+        `- \`${pkg}.application\`: use cases and inbound/outbound ports (interfaces).`,
+        `- \`${pkg}.infrastructure\`: adapters (REST, persistence, messaging) implementing the ports.`,
+        '- Dependencies always point towards `domain`, never the other way around.',
         common[1],
       ];
     case 'feature':
       return [
         common[0],
-        `- Un package par domaine métier (\`${pkg}.order\`, \`${pkg}.customer\`…), contenant son controller, son service, son repository et ses DTOs.`,
-        '- Un domaine n’accède jamais au repository d’un autre domaine : il passe par le service public de ce domaine.',
-        '- Code transverse (config, sécurité, gestion d’erreurs) dans `common` / `config`.',
+        `- One package per business domain (\`${pkg}.order\`, \`${pkg}.customer\`…), holding its controller, service, repository and DTOs.`,
+        '- A domain never accesses another domain’s repository: it goes through that domain’s public service.',
+        '- Cross-cutting code (config, security, error handling) lives in `common` / `config`.',
         common[1],
       ];
     default:
       return [
         common[0],
-        '- Couches : `web` (controllers, DTOs) → `service` (logique métier) → `repository`.',
-        '- Un controller n’appelle jamais un repository directement.',
+        '- Layers: `web` (controllers, DTOs) → `service` (business logic) → `repository`.',
+        '- A controller never calls a repository directly.',
         common[1],
       ];
   }
@@ -54,25 +54,24 @@ function codeRules(b, a) {
   const has = (l) => b.libs.includes(l);
   const generatedClient = a.frontend?.apiClient === 'generated';
   return [
-    '- Injection par constructeur uniquement (pas de `@Autowired` sur les champs).',
-    `- DTOs en \`record\` Java ; les entités${jpa ? ' JPA' : ''} ne sont jamais exposées par l’API REST.`,
-    '- `@Transactional` sur les services, jamais sur les controllers.',
-    '- Erreurs gérées de façon centralisée (`@RestControllerAdvice`), réponses au format `ProblemDetail` (RFC 9457).',
-    '- Configuration dans `application.yml` + profils (`application-<profil>.yml`) ; aucun secret en clair dans le dépôt.',
+    '- Constructor injection only (no `@Autowired` on fields).',
+    `- DTOs are Java \`record\`s; ${jpa ? 'JPA ' : ''}entities are never exposed by the REST API.`,
+    '- `@Transactional` on services, never on controllers.',
+    '- Centralised error handling (`@RestControllerAdvice`), responses as `ProblemDetail` (RFC 9457).',
+    '- Configuration in `application.yml` + profiles (`application-<profile>.yml`); no plain-text secret in the repository.',
     has('lombok') &&
       (jpa
-        ? '- Lombok : `@Getter`, `@Setter`, `@Builder`, `@RequiredArgsConstructor` autorisés ; **pas de `@Data` ni `@EqualsAndHashCode` sur les entités JPA**.'
-        : '- Lombok autorisé, mais préférer les `record` quand c’est possible.'),
+        ? '- Lombok: `@Getter`, `@Setter`, `@Builder`, `@RequiredArgsConstructor` allowed; **no `@Data` or `@EqualsAndHashCode` on JPA entities**.'
+        : '- Lombok allowed, but prefer `record`s whenever possible.'),
     has('mapstruct') &&
-      '- Conversions entité ↔ DTO via des mappers MapStruct (`componentModel = "spring"`), pas de mapping manuel dans les services.',
+      '- Entity ↔ DTO conversions through MapStruct mappers (`componentModel = "spring"`), no manual mapping in services.',
     has('springdoc') &&
-      `- Chaque endpoint est documenté (\`@Operation\`, \`@ApiResponse\`)${generatedClient ? ' : la spec OpenAPI sert à générer le client Angular, tout changement d’API doit y être reflété' : ''}.`,
-    has('security') &&
-      '- Spring Security : tout endpoint est authentifié par défaut ; chaque `permitAll()` doit être justifié.',
-    jpa && '- `spring.jpa.open-in-view=false` ; surveiller les N+1 (`@EntityGraph` ou `JOIN FETCH`).',
+      `- Every endpoint is documented (\`@Operation\`, \`@ApiResponse\`)${generatedClient ? ': the OpenAPI spec is used to generate the Angular client, so every API change must be reflected in it' : ''}.`,
+    has('security') && '- Spring Security: every endpoint is authenticated by default; each `permitAll()` must be justified.',
+    jpa && '- `spring.jpa.open-in-view=false`; watch out for N+1 queries (`@EntityGraph` or `JOIN FETCH`).',
     jpa &&
       b.migration !== 'none' &&
-      `- \`spring.jpa.hibernate.ddl-auto=validate\` : le schéma est géré exclusivement par ${b.migration === 'flyway' ? 'Flyway' : 'Liquibase'}.`,
+      `- \`spring.jpa.hibernate.ddl-auto=validate\`: the schema is managed by ${b.migration === 'flyway' ? 'Flyway' : 'Liquibase'} only.`,
   ];
 }
 
@@ -84,45 +83,45 @@ function migrations(b, a) {
 
   if (b.migration === 'flyway') {
     lines = [
-      '- Scripts SQL dans `src/main/resources/db/migration/`.',
+      '- SQL scripts in `src/main/resources/db/migration/`.',
       ts
-        ? '- Nommage : `V<yyyyMMddHHmm>__<description_snake_case>.sql` (ex. `V202611251430__create_order_table.sql`).'
-        : '- Nommage : `V<n>__<description_snake_case>.sql` ; vérifier le dernier numéro existant avant d’en créer un.',
+        ? '- Naming: `V<yyyyMMddHHmm>__<snake_case_description>.sql` (e.g. `V202611251430__create_order_table.sql`).'
+        : '- Naming: `V<n>__<snake_case_description>.sql`; check the latest existing number before creating one.',
     ];
   } else {
     const ext = b.liquibaseFormat === 'xml' ? 'xml' : b.liquibaseFormat === 'sql' ? 'sql' : 'yaml';
     const masterExt = ext === 'xml' ? 'xml' : 'yaml';
     lines = [
-      `- Changelog maître : \`src/main/resources/db/changelog/db.changelog-master.${masterExt}\`, qui inclut les fichiers de \`db/changelog/changes/\`.`,
+      `- Master changelog: \`src/main/resources/db/changelog/db.changelog-master.${masterExt}\`, which includes the files in \`db/changelog/changes/\`.`,
       ts
-        ? `- Un fichier par évolution : \`changes/<yyyyMMddHHmm>-<description>.${ext}\`.`
-        : `- Un fichier par évolution : \`changes/<nnn>-<description>.${ext}\` ; vérifier le dernier numéro existant.`,
-      '- Chaque changeset a un `id` unique (reprendre le nom du fichier) et un `author`.',
-      ext === 'sql' && '- Format SQL : en-tête `--liquibase formatted sql`, puis `--changeset <auteur>:<id>` avant chaque changeset.',
-      '- Fournir un `rollback` dès que Liquibase ne sait pas le déduire (SQL brut, mises à jour de données).',
+        ? `- One file per change: \`changes/<yyyyMMddHHmm>-<description>.${ext}\`.`
+        : `- One file per change: \`changes/<nnn>-<description>.${ext}\`; check the latest existing number.`,
+      '- Each changeset has a unique `id` (reuse the file name) and an `author`.',
+      ext === 'sql' && '- SQL format: `--liquibase formatted sql` header, then `--changeset <author>:<id>` before each changeset.',
+      '- Provide a `rollback` whenever Liquibase cannot infer it (raw SQL, data updates).',
     ];
   }
 
   lines.push(
-    '- **Ne jamais modifier une migration déjà mergée** (checksum invalide sur tous les environnements) : toute correction passe par une nouvelle migration.',
-    '- Une migration = une évolution cohérente ; les reprises de données volumineuses sont faites par lots.',
+    '- **Never modify a migration that has already been merged** (its checksum would break every environment): every fix goes into a new migration.',
+    '- One migration = one consistent change; large data backfills are done in batches.',
   );
 
   if (d.ha) {
     lines.push(
-      '- **Rolling update** : l’ancienne et la nouvelle version de l’application tournent en même temps sur le même schéma. Chaque migration doit rester compatible avec la version précédente :',
-      '  - ajout de colonne : nullable ou avec valeur par défaut ;',
-      '  - renommage ou changement de type : *expand/contract* (ajouter la nouvelle colonne, migrer les données, basculer le code, supprimer l’ancienne colonne dans une release ultérieure) ;',
-      '  - suppression de colonne ou de table : uniquement quand plus aucune version déployée ne l’utilise.',
+      '- **Rolling updates**: the old and new versions of the application run at the same time on the same schema. Every migration must stay compatible with the previous version:',
+      '  - adding a column: nullable or with a default value;',
+      '  - renaming or changing a type: *expand/contract* (add the new column, migrate the data, switch the code, drop the old column in a later release);',
+      '  - dropping a column or table: only once no deployed version uses it any more.',
     );
     const tool = b.migration;
     if (d.migrationRun === 'job' || d.migrationRun === 'init') {
       lines.push(
-        `- En environnement déployé, les migrations sont exécutées par ${d.migrationRun === 'job' ? 'un Job dédié (avant le déploiement)' : 'un initContainer'}, pas au démarrage de chaque pod (\`spring.${tool}.enabled=false\` dans le profil correspondant).`,
+        `- In deployed environments, migrations are run by ${d.migrationRun === 'job' ? 'a dedicated Job (before the rollout)' : 'an initContainer'}, not on every pod startup (\`spring.${tool}.enabled=false\` in the matching profile).`,
       );
     } else if (d.migrationRun === 'startup') {
       lines.push(
-        `- Les migrations s’exécutent au démarrage ; le verrou ${tool === 'flyway' ? 'Flyway' : 'Liquibase'} sérialise les pods, mais une migration longue bloque la readiness : les garder courtes.`,
+        `- Migrations run on startup; the ${tool === 'flyway' ? 'Flyway' : 'Liquibase'} lock serialises pods, but a long migration blocks readiness: keep them short.`,
       );
     }
   }
@@ -131,17 +130,17 @@ function migrations(b, a) {
 
 function apiContract(b, a) {
   const { layout, related } = a.project;
-  const spec = b.libs.includes('springdoc') ? ' La spec OpenAPI (`/v3/api-docs`) fait foi.' : '';
+  const spec = b.libs.includes('springdoc') ? ' The OpenAPI spec (`/v3/api-docs`) is the source of truth.' : '';
   if (layout === 'monorepo' && a.frontend) {
     return [
-      `- Le frontend du même dépôt consomme cette API : un changement de contrat se fait dans la même PR que l’adaptation du frontend${a.frontend.apiClient === 'generated' ? ' (client régénéré)' : ''}.${spec}`,
+      `- The frontend in this repository consumes this API: a contract change goes in the same PR as the frontend update${a.frontend.apiClient === 'generated' ? ' (regenerated client)' : ''}.${spec}`,
     ];
   }
   if (layout === 'backend') {
     return [
-      `- Cette API est consommée par ${related.frontend ? `le frontend \`${related.frontend}\`` : 'un frontend'}, **dans un dépôt séparé** : il n’est pas mis à jour en même temps.${spec}`,
-      '- Tout changement de contrat (champ supprimé ou renommé, type modifié, endpoint retiré) est **cassant** : rester rétrocompatible (ajouts uniquement) ou versionner (`/api/v2/…`).',
-      '- Signaler explicitement dans le résumé de la tâche tout changement visible par le frontend.',
+      `- This API is consumed by ${related.frontend ? `the \`${related.frontend}\` frontend` : 'a frontend'}, **in a separate repository**: it is not updated at the same time.${spec}`,
+      '- Any contract change (removed or renamed field, changed type, removed endpoint) is **breaking**: stay backward compatible (additions only) or version the API (`/api/v2/…`).',
+      '- Explicitly call out any change visible to the frontend in the task summary.',
     ];
   }
   return [];
@@ -151,11 +150,11 @@ function tests(b) {
   const has = (l) => b.libs.includes(l);
   return [
     '- JUnit 5 + AssertJ + Mockito.',
-    `- Nommage : \`<Classe>Test\` pour les tests unitaires, \`<Classe>IT\` pour les tests d’intégration.`,
-    `- Tranches de test : \`@WebMvcTest\` pour les controllers${b.persistence === 'jpa' ? ', `@DataJpaTest` pour les repositories' : ''}.`,
+    '- Naming: `<Class>Test` for unit tests, `<Class>IT` for integration tests.',
+    `- Test slices: \`@WebMvcTest\` for controllers${b.persistence === 'jpa' ? ', `@DataJpaTest` for repositories' : ''}.`,
     has('testcontainers') &&
-      `- Tests d’intégration sur un vrai ${DB[b.database]} via Testcontainers (\`@ServiceConnection\`) ; **pas de H2**.`,
-    '- Toute fonctionnalité ou correction de bug s’accompagne de tests.',
+      `- Integration tests run against a real ${DB[b.database]} through Testcontainers (\`@ServiceConnection\`); **no H2**.`,
+    '- Every feature or bug fix comes with tests.',
   ];
 }
 
@@ -164,19 +163,19 @@ function runtime(b, a) {
   if (!d || d.orchestrator === 'none') return [];
   const obs = d.observability ?? [];
   return [
-    '- Probes activées (`management.endpoint.health.probes.enabled=true`) : liveness `/actuator/health/liveness`, readiness `/actuator/health/readiness`. Pas de dépendance externe (BDD…) dans la liveness.',
-    '- Arrêt propre : `server.shutdown=graceful`.',
-    d.ha && d.sessions === 'stateless' && '- Application **sans état** : rien en mémoire locale qui doive survivre à un pod (sessions, caches métier, fichiers).',
-    d.ha && d.sessions === 'redis' && '- Sessions HTTP stockées dans Redis via Spring Session : rien en mémoire locale qui doive survivre à un pod.',
-    d.ha && d.sessions === 'sticky' && '- Sticky sessions en place : ne pas en ajouter de nouvelles dépendances, viser le sans-état.',
-    d.ha && d.scheduling === 'shedlock' && '- Toute méthode `@Scheduled` porte un `@SchedulerLock` (ShedLock), sinon elle s’exécute sur chaque replica.',
-    d.ha && d.scheduling === 'quartz' && '- Tâches planifiées via Quartz en mode cluster (JobStore JDBC) ; jamais de `@Scheduled` brut.',
-    d.ha && d.scheduling === 'none' && '- Pas de `@Scheduled` sans verrou distribué : il s’exécuterait sur chaque replica.',
-    d.ha && '- Caches en mémoire (`@Cacheable` local) : attention à la cohérence entre replicas.',
-    obs.includes('prometheus') && '- Métriques via Micrometer, exposées sur `/actuator/prometheus`.',
+    '- Probes enabled (`management.endpoint.health.probes.enabled=true`): liveness `/actuator/health/liveness`, readiness `/actuator/health/readiness`. No external dependency (database…) in the liveness check.',
+    '- Graceful shutdown: `server.shutdown=graceful`.',
+    d.ha && d.sessions === 'stateless' && '- The application is **stateless**: nothing in local memory that must survive a pod (sessions, business caches, files).',
+    d.ha && d.sessions === 'redis' && '- HTTP sessions stored in Redis through Spring Session: nothing in local memory that must survive a pod.',
+    d.ha && d.sessions === 'sticky' && '- Sticky sessions are in place: do not add new dependencies on them, aim for statelessness.',
+    d.ha && d.scheduling === 'shedlock' && '- Every `@Scheduled` method has a `@SchedulerLock` (ShedLock), otherwise it runs on every replica.',
+    d.ha && d.scheduling === 'quartz' && '- Scheduled tasks use clustered Quartz (JDBC JobStore); never a bare `@Scheduled`.',
+    d.ha && d.scheduling === 'none' && '- No `@Scheduled` without a distributed lock: it would run on every replica.',
+    d.ha && '- In-memory caches (local `@Cacheable`): beware of consistency across replicas.',
+    obs.includes('prometheus') && '- Metrics through Micrometer, exposed on `/actuator/prometheus`.',
     (obs.includes('loki') || obs.includes('elk')) &&
-      '- Logs structurés en JSON sur la sortie standard (`logging.structured.format.console`), sans données personnelles ni secrets.',
-    obs.includes('otel') && '- Traces OpenTelemetry via Micrometer Tracing ; propager le contexte dans les appels sortants.',
+      '- Structured JSON logs on standard output (`logging.structured.format.console`), with no personal data or secrets.',
+    obs.includes('otel') && '- OpenTelemetry traces through Micrometer Tracing; propagate the context on outgoing calls.',
   ];
 }
 
@@ -184,21 +183,21 @@ export function backendDoc(a) {
   const b = a.backend;
   const buildLabel = b.build === 'maven' ? 'Maven (`./mvnw`)' : 'Gradle Kotlin DSL (`./gradlew`)';
   return {
-    title: `Backend : Spring Boot ${b.springBoot} / Java ${b.java}`,
+    title: `Backend: Spring Boot ${b.springBoot} / Java ${b.java}`,
     sections: [
       {
         title: 'Stack',
         lines: [
-          `- Build : ${buildLabel}. Toujours utiliser le wrapper, jamais une installation globale.`,
-          `- Base de données : ${DB[b.database]}, accès via ${PERSISTENCE[b.persistence]}.`,
-          b.libs.length && `- Bibliothèques : ${b.libs.map((l) => LIBS[l]).join(', ')}.`,
+          `- Build: ${buildLabel}. Always use the wrapper, never a global installation.`,
+          `- Database: ${DB[b.database]}, accessed through ${PERSISTENCE[b.persistence]}.`,
+          b.libs.length && `- Libraries: ${b.libs.map((l) => LIBS[l]).join(', ')}.`,
         ],
       },
       { title: 'Architecture', lines: architecture(b) },
-      { title: 'Règles de code', lines: codeRules(b, a) },
-      { title: 'Contrat d’API', lines: apiContract(b, a) },
+      { title: 'Code rules', lines: codeRules(b, a) },
+      { title: 'API contract', lines: apiContract(b, a) },
       { title: `Migrations (${b.migration === 'flyway' ? 'Flyway' : 'Liquibase'})`, lines: migrations(b, a) },
-      { title: 'Exécution en cluster', lines: runtime(b, a) },
+      { title: 'Running in a cluster', lines: runtime(b, a) },
       { title: 'Tests', lines: tests(b) },
     ],
   };

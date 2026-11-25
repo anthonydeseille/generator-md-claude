@@ -1,43 +1,46 @@
 # generator-md-claude
 
-Générateur interactif de `CLAUDE.md` pour les projets **Spring Boot / Angular / Kubernetes**.
+Interactive `CLAUDE.md` generator for **Spring Boot / Angular / Kubernetes** projects.
 
-## Utilisation
+## Usage
 
 ```bash
 npx github:anthonydeseille/generator-md-claude
 ```
 
-Pour figer une version : `npx github:anthonydeseille/generator-md-claude#<tag-ou-commit>`.
+To pin a version: `npx github:anthonydeseille/generator-md-claude#<tag-or-commit>`.
 
-À lancer à la racine du projet. Options :
+Run it at the root of your project. Options:
 
-| Option | Effet |
+| Option | Effect |
 |---|---|
-| `-y`, `--skip-prompts` | régénère depuis `.md-claude.json` sans questions |
-| `-f`, `--force` | écrase les fichiers existants sans demander |
-| `--dry-run` | affiche le résultat sans rien écrire |
+| `-y`, `--skip-prompts` | regenerate from `.md-claude.json` without questions |
+| `-f`, `--force` | overwrite existing files without asking |
+| `--dry-run` | print the result without writing anything |
 
-## Organisations supportées
+The latest Spring Boot, Java and Angular versions are fetched from Spring Initializr and the npm registry when the questionnaire starts (static fallback lists when offline).
 
-| Organisation | Ce que le générateur ajoute |
+## Supported layouts
+
+| Layout | What the generator adds |
 |---|---|
-| Monorepo | un CLAUDE.md par dossier ; règle « changement d'API et adaptation du front dans la même PR » |
-| Dépôt backend seul | lien vers le dépôt front ; tout changement de contrat d'API est cassant : rétrocompatibilité ou versioning |
-| Dépôt frontend seul | lien vers le dépôt back ; client généré depuis une spec OpenAPI distante ; interdiction d'inventer des endpoints |
-| Dépôt d'infra seul | images construites ailleurs, tags immuables, migrations par Job |
+| Monorepo | one CLAUDE.md per directory; "API change and frontend update in the same PR" rule |
+| Backend-only repository | link to the frontend repository; any API contract change is breaking: backward compatibility or versioning |
+| Frontend-only repository | link to the backend repository; client generated from a remote OpenAPI spec; no invented endpoints |
+| Infrastructure-only repository | images built elsewhere, immutable tags, migrations run by a Job |
 
-Dans tous les cas, on peut indiquer où se trouve le déploiement : dans le dépôt, dans un dépôt d'infra séparé, ou nulle part pour l'instant. Les règles d'exploitation (contextes kube, HA, ShedLock…) sont posées même quand l'infra est ailleurs.
+In every case you can say where deployment lives: in the repository, in a separate infrastructure repository, or nowhere yet. Operations rules (kube contexts, HA, ShedLock…) are added even when the infrastructure lives elsewhere.
 
-## Fichiers produits
+## Generated files
 
-- `CLAUDE.md` : vue d'ensemble, commandes, conventions git, règles de sécurité Kubernetes (toujours chargé par Claude)
-- `backend/CLAUDE.md`, `frontend/CLAUDE.md`, `deploy/CLAUDE.md` : règles détaillées, chargées seulement quand Claude travaille dans le dossier (fusionnées dans le fichier racine si le dossier est `.`)
-- `.claude/settings.json` : permissions (lecture autorisée hors prod, écritures soumises à validation, `delete` et prod refusés). Fusionné avec l'existant, rien n'est retiré.
-- `.md-claude.json` : les réponses, à commiter. Relancer l'outil les propose par défaut.
+- `CLAUDE.md`: overview, commands, git conventions, Kubernetes safety rules (always loaded by Claude).
+- `backend/CLAUDE.md`, `frontend/CLAUDE.md`, `deploy/CLAUDE.md`: detailed rules, loaded only when Claude works in that directory (merged into the root file when the directory is `.`).
+- `.claude/settings.json`: permissions (read access outside production, writes require approval, `delete` and production denied). Merged with any existing file; nothing is removed.
+- `.claude/commands/bootstrap.md`: the `/bootstrap [backend|frontend|deploy]` command, to run once in Claude Code. It scaffolds the skeleton with Spring Initializr and the Angular CLI, then adds what Initializr does not provide (springdoc, MapStruct, ArchUnit, Spotless, Jib, ShedLock…). Versions come from Initializr and Maven Central, never from Claude’s memory. It overwrites nothing and deploys nothing. At the end of the questionnaire, if the project is not scaffolded yet, the generator offers to open Claude Code with `/bootstrap` directly.
+- `.md-claude.json`: your answers, to commit. Running the tool again offers them as defaults.
 
-Dans chaque `CLAUDE.md`, tout ce qui suit la ligne `<!-- md-claude:manual … -->` est conservé lors des régénérations.
+In every `CLAUDE.md`, everything below the `<!-- md-claude:manual … -->` line is kept when regenerating.
 
-## Limite connue
+## Known limitation
 
-Les règles de permission de Claude Code sont des préfixes. Le blocage de la production repose donc sur l'ordre `kubectl --context <ctx> -n <ns> <verbe>` imposé dans le CLAUDE.md. La vraie protection reste un kubeconfig/RBAC sans accès prod pour la session de Claude.
+Claude Code permission rules are prefix matches. Blocking production therefore relies on the `kubectl --context <ctx> -n <ns> <verb>` order enforced in CLAUDE.md. The real safeguard remains a kubeconfig/RBAC with no production access for Claude’s session.

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { backendDoc } from './backend.js';
+import { bootstrapCommand } from './bootstrap.js';
 import { deployDoc } from './deploy.js';
 import { frontendDoc } from './frontend.js';
 import { rootDoc } from './root.js';
@@ -11,14 +12,14 @@ const PART_DOCS = { backend: backendDoc, frontend: frontendDoc, deploy: deployDo
 const finish = (lines) => `${lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n\n${MANUAL_LINE}\n`;
 
 /**
- * Retourne la liste des fichiers à écrire :
+ * Returns the list of files to write:
  * [{ path, kind: 'markdown', content } | { path, kind: 'settings', permissions }]
  */
 export function renderAll(answers) {
   const { parts, dirs } = answers.project;
   const files = [];
 
-  // Les parties dont le dossier est la racine sont fusionnées dans le CLAUDE.md racine.
+  // Parts located at the repository root are merged into the root CLAUDE.md.
   const rootLines = renderDoc(rootDoc(answers), 1);
   for (const part of parts) {
     const doc = PART_DOCS[part](answers);
@@ -29,6 +30,15 @@ export function renderAll(answers) {
     }
   }
   files.unshift({ path: 'CLAUDE.md', kind: 'markdown', content: finish(rootLines) });
+
+  // /bootstrap command: only useful when there is something to scaffold.
+  if (answers.output.bootstrap !== false && parts.length) {
+    files.push({
+      path: path.join('.claude', 'commands', 'bootstrap.md'),
+      kind: 'markdown',
+      content: finish(bootstrapCommand(answers).split('\n')),
+    });
+  }
 
   if (answers.output.settings) {
     files.push({ path: path.join('.claude', 'settings.json'), kind: 'settings', permissions: buildPermissions(answers) });

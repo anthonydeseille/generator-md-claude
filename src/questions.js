@@ -1,5 +1,6 @@
 import path from 'node:path';
 import * as p from '@clack/prompts';
+import { fetchVersions } from './versions.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -8,19 +9,20 @@ import * as p from '@clack/prompts';
 async function ask(fn, opts) {
   const value = await fn(opts);
   if (p.isCancel(value)) {
-    p.cancel('Génération annulée.');
+    p.cancel('Generation cancelled.');
     process.exit(0);
   }
   return value;
 }
 
-const toOptions = (list) => list.map(([value, label, hint]) => ({ value, label, hint }));
+const toOptions = (list) =>
+  list.map((o) => (Array.isArray(o) ? { value: o[0], label: o[1], hint: o[2] } : o));
 
 const text = (message, initialValue, extra = {}) =>
   ask(p.text, { message, initialValue: initialValue ?? '', ...extra });
 
 const select = (message, list, initialValue) => {
-  const values = list.map(([v]) => v);
+  const values = toOptions(list).map((o) => o.value);
   return ask(p.select, {
     message,
     options: toOptions(list),
@@ -29,7 +31,7 @@ const select = (message, list, initialValue) => {
 };
 
 const multi = (message, list, initialValues = [], required = false) => {
-  const values = list.map(([v]) => v);
+  const values = toOptions(list).map((o) => o.value);
   return ask(p.multiselect, {
     message,
     options: toOptions(list),
@@ -40,34 +42,46 @@ const multi = (message, list, initialValues = [], required = false) => {
 
 const confirm = (message, initialValue = true) => ask(p.confirm, { message, initialValue });
 
-const requiredValue = (v) => (v && v.trim() ? undefined : 'Valeur requise');
+const requiredValue = (v) => (v && v.trim() ? undefined : 'A value is required');
+
+/** Picks from the fetched versions, with free input for existing projects. */
+async function selectVersion(message, options, prevValue, defaultValue) {
+  const known = options.some((o) => o.value === prevValue);
+  const choice = await select(
+    message,
+    [...options, { value: '__other', label: 'Other version', hint: 'existing project, older version' }],
+    prevValue && !known ? '__other' : (prevValue ?? defaultValue),
+  );
+  if (choice !== '__other') return choice;
+  return text(`${message} (free input)`, known ? '' : prevValue, { validate: requiredValue });
+}
 
 const LANGS = [
-  ['fr', 'Français'],
-  ['en', 'Anglais'],
+  ['en', 'English'],
+  ['fr', 'French'],
 ];
 
 // ---------------------------------------------------------------------------
-// Sections
+// Questionnaire sections
 // ---------------------------------------------------------------------------
 
 const PART_DIR = { backend: 'backend', frontend: 'frontend', deploy: 'deploy' };
 
 async function askProject(prev) {
-  p.log.step('Projet');
-  const name = await text('Nom du projet', prev.name ?? path.basename(process.cwd()), {
+  p.log.step('Project');
+  const name = await text('Project name', prev.name ?? path.basename(process.cwd()), {
     validate: requiredValue,
   });
-  const description = await text('Description courte (une phrase)', prev.description, {
-    placeholder: 'Application de gestion des commandes clients',
+  const description = await text('Short description (one sentence)', prev.description, {
+    placeholder: 'Customer order management application',
   });
   const layout = await select(
-    'Organisation du code',
+    'Code organisation',
     [
-      ['monorepo', 'Monorepo', 'front et back dans ce dépôt'],
-      ['backend', 'Dépôts séparés : ce dépôt contient le backend'],
-      ['frontend', 'Dépôts séparés : ce dépôt contient le frontend'],
-      ['infra', 'Dépôt d’infra / déploiement seul'],
+      ['monorepo', 'Monorepo', 'frontend and backend in this repository'],
+      ['backend', 'Separate repositories: this one holds the backend'],
+      ['frontend', 'Separate repositories: this one holds the frontend'],
+      ['infra', 'Infrastructure / deployment repository only'],
     ],
     prev.layout,
   );
@@ -75,11 +89,11 @@ async function askProject(prev) {
   let deployWhere = 'here';
   if (layout !== 'infra') {
     deployWhere = await select(
-      'Où se trouve le déploiement (images, manifests, Helm…) ?',
+      'Where does deployment live (images, manifests, Helm…)?',
       [
-        ['here', 'Dans ce dépôt'],
-        ['separate', 'Dans un dépôt d’infra séparé'],
-        ['none', 'Pas encore de déploiement'],
+        ['here', 'In this repository'],
+        ['separate', 'In a separate infrastructure repository'],
+        ['none', 'No deployment yet'],
       ],
       prev.deployWhere,
     );
@@ -93,21 +107,20 @@ async function askProject(prev) {
     const forcedRoot = layout === part || (layout === 'infra' && part === 'deploy');
     dirs[part] = forcedRoot
       ? '.'
-      : await text(`Dossier ${part === 'deploy' ? 'du déploiement' : `du ${part}`} ("." = racine du dépôt)`, prev.dirs?.[part] ?? PART_DIR[part], {
+      : await text(`${part === 'deploy' ? 'Deployment' : part[0].toUpperCase() + part.slice(1)} directory ("." = repository root)`, prev.dirs?.[part] ?? PART_DIR[part], {
           validate: requiredValue,
         });
   }
 
-  const repo = (message, key) =>
-    text(message, prev.related?.[key], { placeholder: 'nom ou URL, vide si inconnu' });
+  const repo = (message, key) => text(message, prev.related?.[key], { placeholder: 'name or URL, empty if unknown' });
   const related = {};
-  if (layout === 'backend') related.frontend = await repo('Dépôt du frontend qui consomme cette API', 'frontend');
-  if (layout === 'frontend') related.backend = await repo('Dépôt du backend', 'backend');
+  if (layout === 'backend') related.frontend = await repo('Frontend repository consuming this API', 'frontend');
+  if (layout === 'frontend') related.backend = await repo('Backend repository', 'backend');
   if (layout === 'infra') {
-    related.backend = await repo('Dépôt du backend déployé', 'backend');
-    related.frontend = await repo('Dépôt du frontend déployé', 'frontend');
+    related.backend = await repo('Deployed backend repository', 'backend');
+    related.frontend = await repo('Deployed frontend repository', 'frontend');
   }
-  if (deployWhere === 'separate') related.infra = await repo('Dépôt d’infra', 'infra');
+  if (deployWhere === 'separate') related.infra = await repo('Infrastructure repository', 'infra');
 
   return { name, description, layout, deployWhere, parts, dirs, related };
 }
@@ -115,77 +128,62 @@ async function askProject(prev) {
 async function askConventions(prev) {
   p.log.step('Conventions');
   return {
-    codeLang: await select('Langue des identifiants (classes, variables…)', LANGS, prev.codeLang ?? 'en'),
-    docLang: await select('Langue des commentaires et de la documentation', LANGS, prev.docLang ?? 'fr'),
+    codeLang: await select('Language for identifiers (classes, variables…)', LANGS, prev.codeLang ?? 'en'),
+    docLang: await select('Language for comments and documentation', LANGS, prev.docLang ?? 'en'),
     commitStyle: await select(
-      'Format des messages de commit',
+      'Commit message format',
       [
         ['conventional', 'Conventional Commits', 'feat: …, fix: …, chore: …'],
-        ['free', 'Libre'],
+        ['free', 'Free-form'],
       ],
       prev.commitStyle,
     ),
-    commitLang: await select('Langue des messages de commit', LANGS, prev.commitLang ?? 'fr'),
+    commitLang: await select('Language for commit messages', LANGS, prev.commitLang ?? 'en'),
     branching: await select(
-      'Stratégie de branches',
+      'Branching strategy',
       [
-        ['feature', 'Branches courtes depuis main', 'feature/…, fix/…'],
+        ['feature', 'Short-lived branches from main', 'feature/…, fix/…'],
         ['gitflow', 'Git Flow', 'develop, release/…, hotfix/…'],
-        ['trunk', 'Trunk-based', 'petits commits sur main, feature flags'],
+        ['trunk', 'Trunk-based', 'small commits on main, feature flags'],
       ],
       prev.branching,
     ),
-    ticketPrefix: await text('Préfixe des tickets (vide si aucun)', prev.ticketPrefix, {
+    ticketPrefix: await text('Ticket prefix (empty if none)', prev.ticketPrefix, {
       placeholder: 'PROJ',
     }),
-    forbidden: await text('Interdits spécifiques au projet (séparés par ";", vide si aucun)', prev.forbidden, {
-      placeholder: 'Ne jamais toucher au module legacy/ ; pas de nouvelle dépendance sans validation',
+    forbidden: await text('Project-specific rules / forbidden actions (separated by ";", empty if none)', prev.forbidden, {
+      placeholder: 'Never touch the legacy/ module; no new dependency without approval',
     }),
   };
 }
 
-async function askBackend(prev, project) {
-  p.log.step('Backend Spring Boot');
+async function askBackend(prev, project, versions) {
+  p.log.step('Spring Boot backend');
   const build = await select(
-    'Outil de build',
+    'Build tool',
     [
       ['maven', 'Maven'],
       ['gradle', 'Gradle (Kotlin DSL)'],
     ],
     prev.build,
   );
-  const java = await select(
-    'Version de Java',
-    [
-      ['25', 'Java 25 (LTS)'],
-      ['21', 'Java 21 (LTS)'],
-      ['17', 'Java 17 (LTS)'],
-    ],
-    prev.java ?? '21',
-  );
-  const springBoot = await select(
-    'Version de Spring Boot',
-    [
-      ['4', 'Spring Boot 4.x'],
-      ['3', 'Spring Boot 3.x'],
-    ],
-    prev.springBoot,
-  );
+  const springBoot = await selectVersion('Spring Boot version', versions.boot, prev.springBoot, versions.bootDefault);
+  const java = await selectVersion('Java version', versions.java, prev.java, versions.javaDefault);
   const slug = project.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const basePackage = await text('Package racine', prev.basePackage ?? `com.example.${slug || 'app'}`, {
+  const basePackage = await text('Base package', prev.basePackage ?? `com.example.${slug || 'app'}`, {
     validate: requiredValue,
   });
   const architecture = await select(
     'Architecture',
     [
-      ['layered', 'En couches', 'web → service → repository'],
-      ['feature', 'Par fonctionnalité', 'un package par domaine métier'],
-      ['hexagonal', 'Hexagonale', 'domain / application / infrastructure'],
+      ['layered', 'Layered', 'web → service → repository'],
+      ['feature', 'Package by feature', 'one package per business domain'],
+      ['hexagonal', 'Hexagonal', 'domain / application / infrastructure'],
     ],
     prev.architecture,
   );
   const database = await select(
-    'Base de données',
+    'Database',
     [
       ['postgresql', 'PostgreSQL'],
       ['mysql', 'MySQL'],
@@ -196,7 +194,7 @@ async function askBackend(prev, project) {
     prev.database,
   );
   const persistence = await select(
-    'Accès aux données',
+    'Data access',
     [
       ['jpa', 'Spring Data JPA (Hibernate)'],
       ['jdbc', 'Spring Data JDBC / JdbcClient'],
@@ -205,11 +203,11 @@ async function askBackend(prev, project) {
     prev.persistence,
   );
   const migration = await select(
-    'Outil de migration de schéma',
+    'Schema migration tool',
     [
       ['flyway', 'Flyway'],
       ['liquibase', 'Liquibase'],
-      ['none', 'Aucun'],
+      ['none', 'None'],
     ],
     prev.migration,
   );
@@ -218,44 +216,44 @@ async function askBackend(prev, project) {
   let migrationNaming;
   if (migration === 'liquibase') {
     liquibaseFormat = await select(
-      'Format des changelogs Liquibase',
+      'Liquibase changelog format',
       [
         ['yaml', 'YAML'],
         ['xml', 'XML'],
-        ['sql', 'SQL formaté', '--liquibase formatted sql'],
+        ['sql', 'Formatted SQL', '--liquibase formatted sql'],
       ],
       prev.liquibaseFormat,
     );
   }
   if (migration !== 'none') {
     migrationNaming = await select(
-      'Nommage des migrations',
+      'Migration naming',
       [
-        ['timestamp', 'Horodatage', 'évite les conflits de numéros entre branches'],
-        ['sequence', 'Numéro séquentiel', '1, 2, 3…'],
+        ['timestamp', 'Timestamp', 'avoids number clashes between branches'],
+        ['sequence', 'Sequential number', '1, 2, 3…'],
       ],
       prev.migrationNaming,
     );
   }
 
   const libs = await multi(
-    'Bibliothèques utilisées',
+    'Libraries',
     [
       ['lombok', 'Lombok'],
       ['mapstruct', 'MapStruct'],
-      ['springdoc', 'springdoc-openapi', 'Swagger UI + spec OpenAPI'],
+      ['springdoc', 'springdoc-openapi', 'Swagger UI + OpenAPI spec'],
       ['security', 'Spring Security'],
       ['testcontainers', 'Testcontainers'],
-      ['archunit', 'ArchUnit', 'tests des règles d’architecture'],
+      ['archunit', 'ArchUnit', 'architecture rule tests'],
     ],
     prev.libs ?? ['mapstruct', 'springdoc', 'security', 'testcontainers'],
   );
   const formatter = await select(
-    'Formatage / qualité du code',
+    'Formatting / code quality',
     [
       ['spotless', 'Spotless'],
       ['checkstyle', 'Checkstyle'],
-      ['none', 'Aucun'],
+      ['none', 'None'],
     ],
     prev.formatter,
   );
@@ -276,11 +274,13 @@ async function askBackend(prev, project) {
   };
 }
 
-async function askFrontend(prev, backend, project) {
-  p.log.step('Frontend Angular');
-  const angular = await text("Version majeure d'Angular", prev.angular ?? '21', { validate: requiredValue });
+async function askFrontend(prev, backend, project, versions) {
+  p.log.step('Angular frontend');
+  const angular = versions.angular.length
+    ? await selectVersion('Angular version', versions.angular, prev.angular, versions.angularDefault)
+    : await text('Angular major version', prev.angular ?? '', { validate: requiredValue });
   const packageManager = await select(
-    'Gestionnaire de paquets',
+    'Package manager',
     [
       ['npm', 'npm'],
       ['pnpm', 'pnpm'],
@@ -289,16 +289,16 @@ async function askFrontend(prev, backend, project) {
     prev.packageManager,
   );
   const state = await select(
-    "Gestion de l'état",
+    'State management',
     [
-      ['signals', 'Signals + services', 'sans bibliothèque'],
+      ['signals', 'Signals + services', 'no library'],
       ['signalstore', 'NgRx SignalStore'],
       ['ngrx', 'NgRx Store', 'actions / reducers / effects'],
     ],
     prev.state,
   );
   const ui = await multi(
-    'Bibliothèques UI',
+    'UI libraries',
     [
       ['material', 'Angular Material'],
       ['primeng', 'PrimeNG'],
@@ -307,7 +307,7 @@ async function askFrontend(prev, backend, project) {
     prev.ui ?? ['material'],
   );
   const unitTests = await select(
-    'Tests unitaires',
+    'Unit tests',
     [
       ['vitest', 'Vitest'],
       ['jest', 'Jest'],
@@ -316,17 +316,17 @@ async function askFrontend(prev, backend, project) {
     prev.unitTests,
   );
   const e2e = await select(
-    'Tests end-to-end',
+    'End-to-end tests',
     [
       ['playwright', 'Playwright'],
       ['cypress', 'Cypress'],
-      ['none', 'Aucun'],
+      ['none', 'None'],
     ],
     prev.e2e,
   );
 
-  // Client généré : possible si le backend du monorepo publie une spec OpenAPI,
-  // ou si le backend est dans un autre dépôt (on ne sait pas, on demande).
+  // Generated client: possible when the monorepo backend publishes an OpenAPI spec,
+  // or when the backend lives in another repository (unknown, so we ask).
   let apiClient = 'manual';
   let apiDir;
   let apiScript;
@@ -334,37 +334,37 @@ async function askFrontend(prev, backend, project) {
   const canGenerate = backend ? backend.libs.includes('springdoc') : project.layout === 'frontend';
   if (canGenerate) {
     apiClient = await select(
-      'Client HTTP vers le backend',
+      'HTTP client for the backend',
       [
-        ['generated', "Généré depuis la spec OpenAPI du backend", 'openapi-generator, orval…'],
-        ['manual', 'Écrit à la main'],
+        ['generated', 'Generated from the backend OpenAPI spec', 'openapi-generator, orval…'],
+        ['manual', 'Hand-written'],
       ],
       prev.apiClient ?? 'generated',
     );
     if (apiClient === 'generated') {
       if (!backend) {
-        apiSpec = await text('Source de la spec OpenAPI', prev.apiSpec ?? 'http://localhost:8080/v3/api-docs', {
+        apiSpec = await text('OpenAPI spec source', prev.apiSpec ?? 'http://localhost:8080/v3/api-docs', {
           validate: requiredValue,
         });
       }
-      apiDir = await text('Dossier du client généré', prev.apiDir ?? 'src/app/api', { validate: requiredValue });
-      apiScript = await text('Script npm de génération', prev.apiScript ?? 'generate:api', {
+      apiDir = await text('Generated client directory', prev.apiDir ?? 'src/app/api', { validate: requiredValue });
+      apiScript = await text('npm script that generates it', prev.apiScript ?? 'generate:api', {
         validate: requiredValue,
       });
     }
   }
-  const lint = await confirm('ESLint (angular-eslint) + Prettier ?', prev.lint ?? true);
+  const lint = await confirm('ESLint (angular-eslint) + Prettier?', prev.lint ?? true);
 
   return { angular, packageManager, state, ui, unitTests, e2e, apiClient, apiSpec, apiDir, apiScript, lint };
 }
 
-/** Exploitation : utile à tous les dépôts (même sans infra ici, l'app tourne quelque part). */
+/** Operations: relevant to every repository (even without infra here, the app runs somewhere). */
 async function askOps(prev, project, backend) {
-  p.log.step('Environnements et exploitation');
+  p.log.step('Environments and operations');
   const hasBackend = Boolean(backend);
   const hasDeploy = project.parts.includes('deploy');
 
-  const compose = await confirm('docker compose pour le dev local (BDD, Redis…) ?', prev.compose ?? (hasBackend || hasDeploy));
+  const compose = await confirm('docker compose for local development (database, Redis…)?', prev.compose ?? (hasBackend || hasDeploy));
   const ci = await select(
     'CI/CD',
     [
@@ -372,16 +372,16 @@ async function askOps(prev, project, backend) {
       ['gitlab', 'GitLab CI'],
       ['jenkins', 'Jenkins'],
       ['azure', 'Azure DevOps'],
-      ['none', 'Aucune'],
+      ['none', 'None'],
     ],
     prev.ci,
   );
   const orchestrator = await select(
-    'Où tourne l’application ?',
+    'Where does the application run?',
     [
       ['kubernetes', 'Kubernetes'],
       ['openshift', 'OpenShift'],
-      ['none', 'Ailleurs / pas encore défini'],
+      ['none', 'Elsewhere / not decided yet'],
     ],
     prev.orchestrator,
   );
@@ -389,16 +389,16 @@ async function askOps(prev, project, backend) {
   const k8s = {};
   if (orchestrator !== 'none') {
     k8s.nonProdContexts = await text(
-      'Contexte(s) kube hors production, en lecture pour Claude (séparés par des virgules)',
+      'Non-production kube context(s), read access for Claude (comma-separated)',
       prev.nonProdContexts ?? 'dev,staging',
       { validate: requiredValue },
     );
     k8s.prodContexts = await text(
-      'Contexte(s) kube de production, interdits à Claude (séparés par des virgules)',
+      'Production kube context(s), forbidden to Claude (comma-separated)',
       prev.prodContexts ?? 'prod',
       { validate: requiredValue },
     );
-    k8s.namespace = await text('Namespace applicatif', prev.namespace ?? project.name.toLowerCase(), {
+    k8s.namespace = await text('Application namespace', prev.namespace ?? project.name.toLowerCase(), {
       validate: requiredValue,
     });
     k8s.gitops = await select(
@@ -406,7 +406,7 @@ async function askOps(prev, project, backend) {
       [
         ['argocd', 'Argo CD'],
         ['flux', 'Flux'],
-        ['none', 'Aucun', 'déploiement par la CI'],
+        ['none', 'None', 'deployed by CI'],
       ],
       prev.gitops,
     );
@@ -415,7 +415,7 @@ async function askOps(prev, project, backend) {
   let observability = [];
   if (hasBackend || hasDeploy) {
     observability = await multi(
-      'Observabilité',
+      'Observability',
       [
         ['prometheus', 'Prometheus / Micrometer'],
         ['grafana', 'Grafana'],
@@ -430,34 +430,35 @@ async function askOps(prev, project, backend) {
   let ha = false;
   const haApp = {};
   if (orchestrator !== 'none' && (hasBackend || hasDeploy)) {
-    ha = await confirm('Haute disponibilité (plusieurs replicas) ?', prev.ha ?? true);
+    ha = await confirm('High availability (several replicas)?', prev.ha ?? true);
   }
   if (ha && hasBackend) {
     haApp.sessions = await select(
-      'Sessions utilisateur',
+      'User sessions',
       [
-        ['stateless', 'Sans état', 'JWT / OAuth2'],
+        ['stateless', 'Stateless', 'JWT / OAuth2'],
         ['redis', 'Spring Session + Redis'],
-        ['sticky', 'Sticky sessions', 'déconseillé'],
+        ['sticky', 'Sticky sessions', 'not recommended'],
       ],
       prev.sessions,
     );
     haApp.scheduling = await select(
-      'Tâches planifiées',
+      'Scheduled tasks',
       [
-        ['shedlock', 'ShedLock', 'verrou distribué sur @Scheduled'],
-        ['quartz', 'Quartz en cluster'],
-        ['none', 'Aucune tâche planifiée'],
+        ['shedlock', 'ShedLock', 'distributed lock on @Scheduled'],
+        ['quartz', 'Clustered Quartz'],
+        ['none', 'No scheduled tasks'],
       ],
       prev.scheduling,
     );
     if (backend.migration !== 'none') {
+      const tool = backend.migration === 'flyway' ? 'Flyway' : 'Liquibase';
       haApp.migrationRun = await select(
-        'Exécution des migrations en déploiement',
+        `With several replicas, what runs the ${tool} database migrations on deployment?`,
         [
-          ['job', 'Job dédié', 'hook Helm pre-upgrade / Argo CD PreSync'],
-          ['init', 'initContainer'],
-          ['startup', "Au démarrage de l'application"],
+          ['job', 'A Kubernetes Job, once, before the rollout', 'recommended · Helm pre-upgrade hook / Argo CD PreSync'],
+          ['init', 'An initContainer in each pod'],
+          ['startup', 'The application itself on startup', 'Spring Boot default'],
         ],
         prev.migrationRun,
       );
@@ -467,20 +468,20 @@ async function askOps(prev, project, backend) {
   return { compose, ci, orchestrator, ...k8s, observability, ha, ...haApp };
 }
 
-/** Infra : uniquement si le déploiement est dans ce dépôt. */
+/** Infrastructure: only when deployment lives in this repository. */
 async function askDeploy(prev, project, backend, ops) {
-  p.log.step('Déploiement (dans ce dépôt)');
+  p.log.step('Deployment (in this repository)');
   const k8s = ops.orchestrator !== 'none';
   const result = {};
 
   if (project.layout !== 'infra') {
     result.container = await select(
-      'Construction des images',
+      'Image build',
       [
-        ['dockerfile', 'Dockerfile multi-stage'],
+        ['dockerfile', 'Multi-stage Dockerfile'],
         ...(backend
           ? [
-              ['jib', 'Jib', 'sans Dockerfile'],
+              ['jib', 'Jib', 'no Dockerfile'],
               ['buildpacks', 'Buildpacks', 'spring-boot:build-image'],
             ]
           : []),
@@ -490,33 +491,33 @@ async function askDeploy(prev, project, backend, ops) {
   }
   if (k8s) {
     result.packaging = await select(
-      'Packaging des manifests',
+      'Manifest packaging',
       [
         ['helm', 'Helm'],
         ['kustomize', 'Kustomize'],
-        ['raw', 'Manifests YAML bruts'],
+        ['raw', 'Plain YAML manifests'],
       ],
       prev.packaging,
     );
     result.localCluster = await select(
-      'Cluster local',
+      'Local cluster',
       [
         ['kind', 'kind'],
         ['k3d', 'k3d'],
         ['minikube', 'minikube'],
-        ['none', 'Aucun'],
+        ['none', 'None'],
       ],
       prev.localCluster,
     );
   }
   result.secrets = await select(
-    'Gestion des secrets',
+    'Secret management',
     [
       ['vault', 'HashiCorp Vault'],
       ['external-secrets', 'External Secrets Operator'],
       ['sealed', 'Sealed Secrets'],
-      ['k8s', 'Secrets Kubernetes natifs'],
-      ['none', 'Non défini'],
+      ['k8s', 'Native Kubernetes Secrets'],
+      ['none', 'Not defined'],
     ],
     prev.secrets,
   );
@@ -531,23 +532,23 @@ async function askDeploy(prev, project, backend, ops) {
   );
 
   if (ops.ha) {
-    result.replicas = await text('Nombre minimal de replicas en production', prev.replicas ?? '2', {
-      validate: (v) => (/^\d+$/.test(v ?? '') && Number(v) >= 2 ? undefined : 'Entier ≥ 2 attendu'),
+    result.replicas = await text('Minimum number of replicas in production', prev.replicas ?? '2', {
+      validate: (v) => (/^\d+$/.test(v ?? '') && Number(v) >= 2 ? undefined : 'An integer ≥ 2 is expected'),
     });
-    result.hpa = await confirm('HorizontalPodAutoscaler ?', prev.hpa ?? true);
-    result.pdb = await confirm('PodDisruptionBudget ?', prev.pdb ?? true);
+    result.hpa = await confirm('HorizontalPodAutoscaler?', prev.hpa ?? true);
+    result.pdb = await confirm('PodDisruptionBudget?', prev.pdb ?? true);
     const postgresPossible = !backend || backend.database === 'postgresql';
     result.dbHa = await select(
-      'Haute disponibilité de la base',
+      'Database high availability',
       [
-        ['managed', 'Base managée', 'RDS, Cloud SQL, Azure…'],
+        ['managed', 'Managed database', 'RDS, Cloud SQL, Azure…'],
         ...(postgresPossible
           ? [
               ['cnpg', 'CloudNativePG', 'PostgreSQL'],
               ['patroni', 'Patroni', 'PostgreSQL'],
             ]
           : []),
-        ['none', 'Instance unique'],
+        ['none', 'Single instance'],
       ],
       prev.dbHa,
     );
@@ -556,21 +557,33 @@ async function askDeploy(prev, project, backend, ops) {
 }
 
 // ---------------------------------------------------------------------------
-// Entrée
+// Entry point
 // ---------------------------------------------------------------------------
 
 export async function askAll(prev = {}) {
   const project = await askProject(prev.project ?? {});
   const conventions = await askConventions(prev.conventions ?? {});
   const has = (part) => project.parts.includes(part);
-  const backend = has('backend') ? await askBackend(prev.backend ?? {}, project) : undefined;
-  const frontend = has('frontend') ? await askFrontend(prev.frontend ?? {}, backend, project) : undefined;
+
+  let versions;
+  if (has('backend') || has('frontend')) {
+    const spin = p.spinner();
+    spin.start('Fetching the latest versions (Spring Initializr, npm)');
+    versions = await fetchVersions({ spring: has('backend'), angular: has('frontend') });
+    spin.stop(versions.online ? 'Latest versions fetched' : 'Offline: using default version lists');
+  }
+
+  const backend = has('backend') ? await askBackend(prev.backend ?? {}, project, versions) : undefined;
+  const frontend = has('frontend') ? await askFrontend(prev.frontend ?? {}, backend, project, versions) : undefined;
   const ops = await askOps(prev.ops ?? {}, project, backend);
   const deploy = has('deploy') ? await askDeploy(prev.deploy ?? {}, project, backend, ops) : undefined;
 
-  p.log.step('Fichiers générés');
+  p.log.step('Generated files');
   const output = {
-    settings: await confirm('Générer .claude/settings.json (permissions et garde-fous) ?', prev.output?.settings ?? true),
+    settings: await confirm('Generate .claude/settings.json (permissions and guardrails)?', prev.output?.settings ?? true),
+    bootstrap: project.parts.length
+      ? await confirm('Generate the /bootstrap command (scaffolding via Spring Initializr / Angular CLI)?', prev.output?.bootstrap ?? true)
+      : false,
   };
 
   return { project, conventions, backend, frontend, ops, deploy, output };
