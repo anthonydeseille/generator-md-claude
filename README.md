@@ -1,6 +1,6 @@
 # generator-md-claude
 
-Générateur interactif de `CLAUDE.md` pour les projets **Spring Boot / Angular / Kubernetes**, dans l'esprit de JHipster.
+Générateur interactif de `CLAUDE.md` pour les projets **Spring Boot / Angular / Kubernetes**.
 
 ## Utilisation
 
