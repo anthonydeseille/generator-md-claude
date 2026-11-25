@@ -5,10 +5,10 @@ Générateur interactif de `CLAUDE.md` pour les projets **Spring Boot / Angular 
 ## Utilisation
 
 ```bash
-npx github:<compte>/generator-md-claude    # sans installation
-# ou
-npm i -g generator-md-claude && md-claude
+npx github:anthonydeseille/generator-md-claude
 ```
+
+Pour figer une version : `npx github:anthonydeseille/generator-md-claude#<tag-ou-commit>`.
 
 À lancer à la racine du projet. Options :
 
